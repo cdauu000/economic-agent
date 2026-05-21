@@ -12,9 +12,11 @@ from .ingestion.excel import process_excel_document
 from .ingestion.news import process_news_article
 from .ingestion.pdf import process_pdf_document
 from .ingestion.validation import ExtractionStats, validate_document_file, validate_ingestion
+from .rag.embedding.pipeline import EmbeddingBatchResult
 from .rag.vector_store import VectorStoreService
+from .retrieval.router import bind_retrieval_api, router as retrieval_router
+from .retrieval.service import RetrievalAPI
 from .services.agent_service import build_rag_answer
-from .services.retrieval_governance import apply_retrieval_governance
 from .trend_engine import predict_trend
 
 
@@ -28,7 +30,11 @@ for directory in (RAW_DIR, PROCESSED_DIR, VECTOR_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 vector_store = VectorStoreService(persist_directory=str(VECTOR_DIR))
+retrieval_api = RetrievalAPI(vector_store)
+bind_retrieval_api(retrieval_api)
+
 app = FastAPI(title="Economic Agent System", version="1.0.0")
+app.include_router(retrieval_router)
 
 
 class PredictRequest(BaseModel):
@@ -45,6 +51,7 @@ class AskRequest(BaseModel):
     year: Optional[str] = None
     source: Optional[str] = None
     document_type: Optional[str] = None
+    retrieval_mode: Optional[str] = Field(default="hybrid")
     top_k: int = Field(default=4, ge=1, le=10)
 
 
@@ -268,7 +275,14 @@ async def upload_data(
         ),
     )
 
-    embed_result = vector_store.add_documents(chunk_records)
+    update_result = vector_store.update_records(chunk_records)
+    embed_result = EmbeddingBatchResult(
+        embedded_count=update_result.updated_count,
+        skipped_count=update_result.skipped_count,
+        duplicate_count=update_result.duplicate_count,
+        model=vector_store.embedding_model,
+        model_version=update_result.update_version,
+    )
 
     response = {
         "message": "data ingested",
@@ -285,6 +299,17 @@ async def upload_data(
             "warnings": validation.warnings,
         },
         "embedded_count": embed_result.embedded_count,
+        "indexed_count": update_result.updated_count,
+        "vector_update": {
+            "updated_count": update_result.updated_count,
+            "duplicate_count": update_result.duplicate_count,
+            "replaced_count": update_result.replaced_count,
+            "batch_count": update_result.batch_count,
+            "latency_ms": update_result.latency_ms,
+            "update_version": update_result.update_version,
+            "doc_ids": update_result.doc_ids,
+            "skipped_count": update_result.skipped_count,
+        },
         "embedding_model": embed_result.model,
         "embedding_version": embed_result.model_version,
         "processed_preview": processed["chunks"][:2],
@@ -341,39 +366,33 @@ def predict(payload: PredictRequest) -> dict:
 
 @app.post("/ask")
 def ask(payload: AskRequest) -> dict:
-    retrieved = vector_store.query(
+    from .retrieval.schemas import RetrievalFilters
+
+    retrieval = retrieval_api.search(
         payload.question,
         top_k=payload.top_k,
-        company=payload.company,
-        industry=payload.sector,
-        year=payload.year,
-        source=payload.source,
-        document_type=payload.document_type,
+        filters=RetrievalFilters(
+            company=payload.company,
+            industry=payload.sector,
+            year=payload.year,
+            source=payload.source,
+            document_type=payload.document_type,
+        ),
     )
-    filtered: list[dict] = []
-    distances: list[float] = []
-    for item in retrieved:
-        metadata = item.metadata
-        filtered.append({"text": item.text, **metadata})
-        distances.append(item.distance)
-
-    governed_contexts, assessment = apply_retrieval_governance(
-        question=payload.question,
-        contexts=filtered,
-        distances=distances if distances else None,
-    )
+    governed_contexts = [{"text": c.text, **c.metadata} for c in retrieval.chunks]
 
     answer = build_rag_answer(
         question=payload.question,
         contexts=governed_contexts,
         retrieval_assessment={
-            "status": assessment.status,
-            "chunk_count": assessment.chunk_count,
-            "trusted_chunk_count": assessment.trusted_chunk_count,
-            "warnings": assessment.warnings,
-            "value": assessment.confidence_value,
-            "band": assessment.confidence_band,
-            "reasoning": assessment.confidence_reasoning,
+            "status": retrieval.confidence.status,
+            "chunk_count": retrieval.confidence.chunk_count,
+            "trusted_chunk_count": retrieval.confidence.trusted_chunk_count,
+            "warnings": retrieval.confidence.warnings,
+            "value": retrieval.confidence.value,
+            "band": retrieval.confidence.band,
+            "reasoning": retrieval.confidence.reasoning,
         },
     )
+    answer["retrieval"] = retrieval.model_dump()
     return answer

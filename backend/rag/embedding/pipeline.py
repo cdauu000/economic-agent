@@ -9,6 +9,7 @@ from typing import Dict, List, Set
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 
+from ..indexing.constants import HNSW_COLLECTION_METADATA
 from .constants import EMBEDDING_VERSION, MIN_EMBED_CHARS
 from .model import resolve_embedding_model
 from .normalizer import normalize_chunk_text, normalize_query_text
@@ -39,7 +40,7 @@ class EmbeddingPipeline:
             collection_name=collection_name,
             persist_directory=persist_directory,
             embedding_function=self._embeddings,
-            collection_metadata={"hnsw:space": "cosine"},
+            collection_metadata=HNSW_COLLECTION_METADATA,
         )
         self._seen_hashes: Set[str] = set()
 

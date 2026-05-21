@@ -26,6 +26,9 @@ Highest priority:
 - verified financial documents
 - trusted news sources
 
+## Related
+- Vector indexing (ingest): `docs/vector-indexing-strategy.md`
+
 ## Implementation Notes
 - Use semantic search to gather candidate chunks, then refine with metadata and keyword constraints.
 - Apply ranking-factor blending before final context assembly.
