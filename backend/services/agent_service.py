@@ -5,20 +5,16 @@ from typing import Dict, List
 
 from openai import OpenAI
 
-
-SYSTEM_PROMPT = """You are a financial and economic analyst.
-
-Retrieval governance (non-negotiable):
-- Retrieval quality outweighs answer length; prefer short, grounded answers.
-- Answer ONLY using provided context; never invent metrics, companies, or events.
-- If data is insufficient, respond exactly: insufficient data
-- Do not make unsupported financial claims.
-- When context is low-trust or sparse, keep claims minimal and factual.
-- Be concise and structured"""
+from ..orchestration.prompts import SYSTEM_PROMPT
 
 
-def generate_llm_response(query: str, context: str) -> str:
-    if not context.strip():
+def generate_llm_response(
+    query: str,
+    context: str,
+    *,
+    user_prompt: str | None = None,
+) -> str:
+    if not (context.strip() or (user_prompt or "").strip()):
         return "insufficient data"
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -26,7 +22,7 @@ def generate_llm_response(query: str, context: str) -> str:
         return "insufficient data"
 
     client = OpenAI(api_key=api_key)
-    user_prompt = f"""Context:
+    user_content = user_prompt or f"""Context:
 {context}
 
 Question:
@@ -37,7 +33,7 @@ Question:
             temperature=0,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": user_content},
             ],
         )
         content = (response.choices[0].message.content or "").strip()

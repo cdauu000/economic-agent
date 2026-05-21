@@ -54,19 +54,11 @@ User Query
    - if insufficient evidence remains, return `INSUFFICIENT_DATA`.
 
 6. **Reasoning**
-   - run `rag-query-reasoning`.
-   - generate answer from retrieved evidence only.
-   - separate:
-     - facts
-     - inferred signals
-     - assumptions
+   - run `PromptOrchestrationPipeline` (`backend/orchestration/`).
+   - layered output: facts, signals, interpretation, assumptions.
 
 7. **Evaluation**
-   - run response checks for:
-     - grounding coverage
-     - hallucination risk
-     - evidence consistency
-     - confidence calibration
+   - `orchestration/evaluation.py`: grounding coverage, hallucination risk, evidence consistency.
 
 8. **Output Formatting**
    - return:

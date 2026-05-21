@@ -16,7 +16,7 @@ from .rag.embedding.pipeline import EmbeddingBatchResult
 from .rag.vector_store import VectorStoreService
 from .retrieval.router import bind_retrieval_api, router as retrieval_router
 from .retrieval.service import RetrievalAPI
-from .services.agent_service import build_rag_answer
+from .orchestration.pipeline import PromptOrchestrationPipeline
 from .trend_engine import predict_trend
 
 
@@ -32,6 +32,7 @@ for directory in (RAW_DIR, PROCESSED_DIR, VECTOR_DIR):
 vector_store = VectorStoreService(persist_directory=str(VECTOR_DIR))
 retrieval_api = RetrievalAPI(vector_store)
 bind_retrieval_api(retrieval_api)
+orchestrator = PromptOrchestrationPipeline(retrieval_api)
 
 app = FastAPI(title="Economic Agent System", version="1.0.0")
 app.include_router(retrieval_router)
@@ -366,33 +367,14 @@ def predict(payload: PredictRequest) -> dict:
 
 @app.post("/ask")
 def ask(payload: AskRequest) -> dict:
-    from .retrieval.schemas import RetrievalFilters
-
-    retrieval = retrieval_api.search(
+    result = orchestrator.run(
         payload.question,
+        company=payload.company,
+        sector=payload.sector,
+        year=payload.year,
+        source=payload.source,
+        document_type=payload.document_type,
         top_k=payload.top_k,
-        filters=RetrievalFilters(
-            company=payload.company,
-            industry=payload.sector,
-            year=payload.year,
-            source=payload.source,
-            document_type=payload.document_type,
-        ),
+        retrieval_mode=payload.retrieval_mode or "hybrid",
     )
-    governed_contexts = [{"text": c.text, **c.metadata} for c in retrieval.chunks]
-
-    answer = build_rag_answer(
-        question=payload.question,
-        contexts=governed_contexts,
-        retrieval_assessment={
-            "status": retrieval.confidence.status,
-            "chunk_count": retrieval.confidence.chunk_count,
-            "trusted_chunk_count": retrieval.confidence.trusted_chunk_count,
-            "warnings": retrieval.confidence.warnings,
-            "value": retrieval.confidence.value,
-            "band": retrieval.confidence.band,
-            "reasoning": retrieval.confidence.reasoning,
-        },
-    )
-    answer["retrieval"] = retrieval.model_dump()
-    return answer
+    return orchestrator.to_response_dict(result)

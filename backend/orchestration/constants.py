@@ -1,0 +1,15 @@
+from __future__ import annotations
+
+INTENT_FACTUAL = "factual"
+INTENT_METRIC = "metric_lookup"
+INTENT_DOCUMENT = "document_retrieval"
+INTENT_TREND = "trend"
+INTENT_RISK = "risk"
+INTENT_ANALYSIS = "analysis"
+INTENT_SENTIMENT = "sentiment"
+INTENT_MACRO = "macro"
+
+STRATEGIC_INTENTS = {INTENT_TREND, INTENT_RISK, INTENT_ANALYSIS, INTENT_SENTIMENT, INTENT_MACRO}
+
+DEFAULT_TOP_K = 4
+STRATEGIC_TOP_K = 6
